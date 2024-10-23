@@ -121,7 +121,7 @@ if __name__=='__main__':
     df.show()
 
     def to_add_column(df):
-        df1 = df.withColumn("area", split(col('place'), 'of')[1])
+        df1 = df.withColumn("area", split(col('place'), 'of').getItem(1))
         return df1
 
     df1 = to_add_column(df)
