@@ -1,10 +1,12 @@
+from colorlog import exception
 from google.cloud import storage
 import os
 import json
 from datetime import datetime
 from pyspark.sql.types import StructType, StructField, StringType, FloatType, IntegerType
-from pyspark.sql.functions import col, split
+from pyspark.sql.functions import col, split, current_timestamp
 from pyspark.sql import  SparkSession
+from google.cloud import bigquery
 
 spark = SparkSession.builder.appName("flatten_data").getOrCreate()
 if __name__=='__main__':
@@ -118,7 +120,7 @@ if __name__=='__main__':
     json_string = download_json_from_gcs(bucket_name,file_path)
     df = flatten_data_convert_to_df(json_string)
 
-    df.show()
+    # df.show()
 
     def to_add_column(df):
         df1 = df.withColumn("area", split(col('place'), 'of').getItem(1))
@@ -129,4 +131,44 @@ if __name__=='__main__':
     formatted_date = current_date.strftime('%Y%m%d')
     gcs_path = f"gs://earthquake_analysis_1/pyspark/silver/{formatted_date}/earthquake_flatten.json"
 
-    df1.write.json(gcs_path, mode='overwrite')
+    # df1.write.json(gcs_path, mode='overwrite')
+
+
+###########################################################Golden#################
+    def add_col_insert_dt(df):
+        df2 = df.withColumn("insert_dt", current_timestamp())
+        return df2
+
+    df2 = add_col_insert_dt(df1)
+
+#     write to bigquery
+
+    def load_df_to_bigquery(df, project_id, dataset_id, table_id, gcs_temp_location):
+        big_client = bigquery.Client()
+
+        table_ref = f"{project_id}.{dataset_id}.{table_id}"
+
+        try:
+            df.write\
+                .format("bigquery")\
+                .option("table",table_ref )\
+                .option("temporaryGCSBucket", gcs_temp_location)\
+                .save()
+            print(f"data successfully loaded into BigQuery")
+        except exception as e:
+            print(f"failed to load data ino Bigquery: {e}")
+
+    project_id = "prj-project1"
+    dataset_id="earthquake_ingestion1"
+    table_id="earthquake_table"
+    gcs_temp_location="earthquake_analysis_1"
+
+    try:
+        load_df_to_bigquery(df2,project_id, dataset_id, table_id, gcs_temp_location)
+    except Exception as e:
+        print(f"Error writing data to Bigquery: {e}")
+
+
+
+
+
